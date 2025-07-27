@@ -2,11 +2,11 @@
 
 ![NextJS](https://img.shields.io/badge/Built_with-NextJS-blue)
 
-This Next.js application provides the web interface for the Testing Agent demo. It allows you to define test cases, sends them to the CUA server and displays messages from the CUA model in the UI.
+This Next.js application provides the web interface for the Testing Agent demo. It allows you to define test cases, sends them to the Gemini server and displays the generated Playwright code in the UI.
 
 ## Setup
 
-1. Copy the example environment file and add your OpenAI key:
+1. Copy the example environment file and add your Gemini key:
    ```bash
    cp .env.example .env.development
    # edit .env.development
@@ -18,4 +18,4 @@ This Next.js application provides the web interface for the Testing Agent demo. 
    ```
    The app will be running at [http://localhost:3000](http://localhost:3000).
 
-Make sure the CUA server is running (see [cua-server/README.md](../cua-server/README.md)) and, for demo purposes, the sample app ([sample-test-app/README.md](../sample-test-app/README.md)).
+Make sure the Gemini server is running (see [gemini-server/README.md](../gemini-server/README.md)) and, for demo purposes, the sample app ([sample-test-app/README.md](../sample-test-app/README.md)).

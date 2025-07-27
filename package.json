@@ -4,13 +4,13 @@
   "workspaces": [
     "sample-test-app",
     "frontend",
-    "cua-server"
+    "gemini-server"
   ],
   "scripts": {
     "dev:sample-test-app": "npm run dev --prefix sample-test-app",
     "dev:frontend": "npm run dev --prefix frontend",
-    "dev:cua-server": "npm run dev --prefix cua-server",
-    "dev": "concurrently \"npm:dev:sample-test-app\" \"npm:dev:frontend\" \"npm:dev:cua-server\""
+    "dev:gemini-server": "npm run dev --prefix gemini-server",
+    "dev": "concurrently \"npm:dev:sample-test-app\" \"npm:dev:frontend\" \"npm:dev:gemini-server\""
   },
   "devDependencies": {
     "concurrently": "^8.2.2"
