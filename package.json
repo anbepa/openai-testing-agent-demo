@@ -4,13 +4,16 @@
   "workspaces": [
     "sample-test-app",
     "frontend",
-    "gemini-server"
+    "gemini-server",
+    "cua-server"
   ],
   "scripts": {
     "dev:sample-test-app": "npm run dev --prefix sample-test-app",
     "dev:frontend": "npm run dev --prefix frontend",
     "dev:gemini-server": "npm run dev --prefix gemini-server",
-    "dev": "concurrently \"npm:dev:sample-test-app\" \"npm:dev:frontend\" \"npm:dev:gemini-server\""
+    "dev:cua-server": "npm run dev --prefix cua-server",
+    "dev": "concurrently \"npm:dev:frontend\" \"npm:dev:cua-server\"",
+    "dev:with-sample": "concurrently \"npm:dev:sample-test-app\" \"npm:dev:frontend\" \"npm:dev:cua-server\""
   },
   "devDependencies": {
     "concurrently": "^8.2.2"
@@ -18,5 +21,9 @@
   "overrides": {
     "@types/react": "18.3.20",
     "@types/react-dom": "18.3.7"
+  },
+  "dependencies": {
+    "@playwright/test": "^1.54.1",
+    "dotenv": "^17.2.1"
   }
 }

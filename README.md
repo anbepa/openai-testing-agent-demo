@@ -2,13 +2,17 @@
 
 [![MIT License](https://img.shields.io/badge/License-MIT-green.svg)](frontend/LICENSE)
 
-This monorepo demonstrates how you can use Google's Gemini API to generate Playwright test scripts from natural language descriptions. The backend sends the user prompt to Gemini and returns executable Playwright code.
+This monorepo demonstrates automated testing using AI agents. It offers two approaches:
 
-The repo contains three applications that work together:
+1. **Gemini Hybrid**: Use Google's Gemini API to generate test steps AND automatically execute them with Playwright
+2. **OpenAI CUA**: Use OpenAI's Computer Use Agent for advanced computer vision-based test execution
 
-- **frontend** – Next.js web interface used to configure tests and watch them run.
-- **gemini-server** – Node service that sends the instructions to Gemini and returns Playwright code.
-- **sample-test-app** – Example e‑commerce site used as an example app to test by the agent.
+The repo contains four applications:
+
+- **frontend** – Next.js web interface used to configure tests, specify target URLs, and watch execution
+- **gemini-server** – Node service that uses Google Gemini to generate test steps and executes them automatically with Playwright
+- **cua-server** – Node service that uses OpenAI CUA for advanced computer vision-based test execution
+- **sample-test-app** – Optional example e‑commerce site for local testing demonstrations
 
 ![screenshot](./screenshot.jpg)
 
@@ -26,22 +30,24 @@ The repo contains three applications that work together:
 
 2. **Prepare environment files**
 
-   Edit each `.env.development` file and set `GOOGLE_API_KEY` with your Gemini credentials.
-
+   **Option A: Gemini Hybrid (Recommended)**
    ```bash
    cp frontend/.env.example frontend/.env.development
    cp gemini-server/.env.example gemini-server/.env.development
+   ```
+   Edit `gemini-server/.env.development` and add your `GOOGLE_API_KEY`.
+
+   **Option B: Full Test Execution (OpenAI CUA)**
+   ```bash
+   cp frontend/.env.example frontend/.env.development
+   cp cua-server/.env.example cua-server/.env.development
+   ```
+   Edit `cua-server/.env.development` and add your `OPENAI_API_KEY`.
+
+   **Optional:** For local sample app testing:
+   ```bash
    cp sample-test-app/.env.example sample-test-app/.env.development
    ```
-
-   The sample app also defines demo login credentials, which by default are:
-
-   ```bash
-   ADMIN_USERNAME=test_user_name
-   ADMIN_PASSWORD=test_password
-   ```
-
-   Make sure you add a `sample-test-app/.env.development` file with the example credentials to run the demo.
 
 3. **Install dependencies**
 
@@ -50,19 +56,38 @@ The repo contains three applications that work together:
    npx playwright install
    ```
 
-4. **Run all apps**
+4. **Run the testing agent**
 
+   **Option A: Gemini Hybrid (Recommended)**
    ```bash
-   npm run dev
+   npm run dev:frontend
+   npm run dev:gemini-server
    ```
 
-   This will start all three apps:
+   **Option B: OpenAI CUA (Advanced)**
+   ```bash
+   npm run dev  # This runs frontend + cua-server by default
+   ```
 
+   **With sample app (either option):**
+   ```bash
+   npm run dev:with-sample
+   ```
+
+   This will start:
    - Frontend UI: http://localhost:3000
-   - Sample app: http://localhost:3005
-   - Gemini server: [ws://localhost:8000](http://localhost:8000)
+   - Backend server: ws://localhost:8000 (gemini-server OR cua-server)
+   - Sample app (optional): http://localhost:3005
 
-   Navigate to [localhost:3000](http://localhost:3000) to see the frontend UI and run the demo.
+5. **Configure your test**
+
+   Navigate to [localhost:3000](http://localhost:3000) and:
+   - Enter the URL of the website you want to test
+   - Describe what you want to test in natural language
+   - Configure authentication if needed
+   - Submit and watch the AI:
+     - **Gemini**: Generate test steps and execute them automatically with Playwright
+     - **CUA**: Execute tests with advanced computer vision and real browser automation
 
 For details on each app see their READMEs:
 

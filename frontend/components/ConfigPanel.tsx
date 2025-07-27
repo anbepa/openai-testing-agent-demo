@@ -50,7 +50,7 @@ export default function ConfigPanel({ onSubmitted }: ConfigPanelProps) {
   const [name, setName] = useState(USER_INFO.name);
   const [email, setEmail] = useState(USER_INFO.email);
   const [address, setAddress] = useState(USER_INFO.address);
-  const [requiresLogin, setRequiresLogin] = useState(true);
+  const [requiresLogin, setRequiresLogin] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [formSubmitted, setFormSubmitted] = useState(false);
   const [tabValue, setTabValue] = useState<"test-case" | "variables">(
@@ -61,6 +61,19 @@ export default function ConfigPanel({ onSubmitted }: ConfigPanelProps) {
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (submitting) return;
+
+    // Basic URL validation
+    try {
+      new URL(url);
+    } catch {
+      alert('Please enter a valid URL (e.g., https://example.com)');
+      return;
+    }
+
+    if (!testCase.trim()) {
+      alert('Please enter test instructions');
+      return;
+    }
 
     setSubmitting(true);
     setFormSubmitted(true);
@@ -150,7 +163,17 @@ export default function ConfigPanel({ onSubmitted }: ConfigPanelProps) {
                   value={testCase}
                   onChange={(e) => setTestCase(e.target.value)}
                   disabled={submitting}
+                  placeholder="Example: Navigate to the homepage, verify the main navigation menu works, test the search functionality by searching for 'product', and check that the search results page loads correctly."
                 />
+                <div className="mt-3 text-sm text-muted-foreground">
+                  <p className="font-medium mb-2">Example test cases:</p>
+                  <ul className="space-y-1 text-xs">
+                    <li>• E-commerce: "Add a product to cart, proceed to checkout, and fill out shipping information"</li>
+                    <li>• Blog/News: "Navigate to the latest article, verify it loads, and test the comment form"</li>
+                    <li>• SaaS App: "Sign up for a new account, verify email confirmation, and test the dashboard"</li>
+                    <li>• Portfolio: "Check all navigation links work and contact form submits successfully"</li>
+                  </ul>
+                </div>
               </CardContent>
               <CardFooter className="flex justify-between">
                 <Button
@@ -196,11 +219,12 @@ export default function ConfigPanel({ onSubmitted }: ConfigPanelProps) {
                     <Input
                       id="url"
                       type="url"
-                      placeholder="http://localhost:3001"
+                      placeholder="https://example.com"
                       value={url}
                       onChange={(e) => setUrl(e.target.value)}
                       disabled={submitting}
                       className="flex-1"
+                      required
                     />
                   </div>
 
