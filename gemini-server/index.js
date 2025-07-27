@@ -3,10 +3,12 @@ import http from 'http';
 import { Server as SocketIOServer } from 'socket.io';
 import dotenv from 'dotenv';
 import { ChatGoogleGenerativeAI } from '@langchain/google-genai';
-import { chromium } from 'playwright';
 import fs from 'fs';
 import path from 'path';
-import { spawn, spawnSync } from 'child_process';
+import { MCPConfigManager } from './lib/MCPConfigManager.js';
+import { GeminiCLIExecutor } from './lib/GeminiCLIExecutor.js';
+import { ProgressTracker } from './lib/ProgressTracker.js';
+import { ErrorHandler } from './lib/ErrorHandler.js';
 
 dotenv.config({ path: '.env.development' });
 
@@ -17,13 +19,48 @@ const app = express();
 const httpServer = http.createServer(app);
 const io = new SocketIOServer(httpServer, { cors: { origin: CORS_ORIGIN } });
 
-const model = new ChatGoogleGenerativeAI({
-  model: 'gemini-2.0-flash',
-  apiKey: process.env.GOOGLE_API_KEY,
-});
+// Legacy model for backward compatibility (only used when MCP integration is disabled)
+let model = null;
+if (process.env.USE_MCP_INTEGRATION !== 'true') {
+  model = new ChatGoogleGenerativeAI({
+    model: 'gemini-2.0-flash',
+    apiKey: process.env.GOOGLE_API_KEY,
+  });
+}
+
+// Initialize MCP Configuration Manager
+const mcpConfigManager = new MCPConfigManager('../.kiro/settings/mcp.json');
+
+// Initialize Gemini CLI Executor
+const geminiCLIExecutor = new GeminiCLIExecutor(mcpConfigManager);
+
+// Initialize Error Handler
+const errorHandler = new ErrorHandler(mcpConfigManager, geminiCLIExecutor);
 
 app.get('/', (req, res) => {
-  res.send('Gemini server with execution running');
+  const status = {
+    service: 'Gemini Testing Server',
+    version: '2.0.0',
+    status: 'running',
+    integration: process.env.USE_MCP_INTEGRATION === 'true' ? 'Gemini CLI + MCP' : 'Legacy Playwright',
+    capabilities: process.env.USE_MCP_INTEGRATION === 'true' ? {
+      mcpTools: 24,
+      browserAutomation: true,
+      realTimeProgress: true,
+      errorRecovery: true,
+      enhancedDebugging: true
+    } : {
+      basicAutomation: true,
+      limitedCapabilities: true
+    },
+    endpoints: {
+      status: 'GET /',
+      websocket: 'ws://localhost:' + PORT
+    },
+    timestamp: new Date().toISOString()
+  };
+  
+  res.json(status);
 });
 
 // Create screenshots directory if it doesn't exist
@@ -38,12 +75,13 @@ io.on('connection', (socket) => {
   socket.on('testCaseInitiated', async (data) => {
     console.log('Received test case data:', data);
 
-    if (process.env.USE_GEMINI_CLI === 'true') {
+    // Check if we should use the new Gemini CLI + MCP integration
+    if (process.env.USE_GEMINI_CLI === 'true' || process.env.USE_MCP_INTEGRATION === 'true') {
       try {
-        await runWithGeminiCLI(data, socket);
+        await executeWithGeminiCLI(data, socket);
       } catch (err) {
-        console.error('Gemini CLI error', err);
-        socket.emit('message', 'Error running Gemini CLI: ' + err.message);
+        console.error('Gemini CLI + MCP error', err);
+        socket.emit('message', 'Error running Gemini CLI with MCP: ' + err.message);
       }
       return;
     }
@@ -127,8 +165,31 @@ IMPORTANT RULES:
 
   socket.on('message', async (msg) => {
     try {
-      const response = await model.invoke(msg);
-      socket.emit('message', response.content);
+      // Use Gemini CLI for messages if MCP integration is enabled
+      if (process.env.USE_MCP_INTEGRATION === 'true') {
+        const testData = {
+          testCase: msg,
+          url: 'about:blank',
+          loginRequired: false
+        };
+
+        const progressCallback = (type, data) => {
+          if (type === 'output') {
+            socket.emit('message', data);
+          }
+        };
+
+        const result = await geminiCLIExecutor.executeTestCase(testData, progressCallback);
+        // Result is already sent via progressCallback
+      } else {
+        // Fallback to direct API (legacy mode)
+        if (model) {
+          const response = await model.invoke(msg);
+          socket.emit('message', response.content);
+        } else {
+          socket.emit('message', '⚠️ Legacy mode requires @langchain/google-genai. Enable MCP integration with USE_MCP_INTEGRATION=true');
+        }
+      }
     } catch (err) {
       console.error('Gemini error', err);
       socket.emit('message', 'Error generating response.');
@@ -136,8 +197,9 @@ IMPORTANT RULES:
   });
 });
 
-// Function to execute test steps with Playwright
+// Legacy function to execute test steps with direct Playwright (deprecated)
 async function executeTestSteps(steps, testData, socket) {
+  console.log('⚠️ Using legacy Playwright execution. Consider enabling USE_MCP_INTEGRATION=true for better performance');
   let browser = null;
   let page = null;
 
@@ -393,39 +455,153 @@ async function verifyWithSmartSelector(page, target) {
   }
 }
 
-async function runWithGeminiCLI(data, socket) {
-  return new Promise((resolve, reject) => {
-    const prompt = `${data.testCase}\nTARGET WEBSITE: ${data.url}`;
-    const settingsPath = path.join(process.cwd(), '.gemini', 'settings.json');
+/**
+ * Executes test case using Gemini CLI with MCP integration
+ */
+async function executeWithGeminiCLI(data, socket) {
+  try {
+    socket.emit('message', '🤖 Starting Gemini CLI with MCP integration...');
 
-    const baseArgs = ['-p', prompt];
-    if (fs.existsSync(settingsPath)) {
-      baseArgs.push('--settings', settingsPath);
+    // Check Gemini CLI installation
+    const installationStatus = await geminiCLIExecutor.checkGeminiCLIInstallation();
+    if (!installationStatus.available) {
+      socket.emit('message', '📦 Installing Gemini CLI...');
+      await geminiCLIExecutor.installGeminiCLI();
     }
 
-    let cmd = 'gemini';
-    let args = baseArgs;
+    socket.emit('message', '🔧 Setting up MCP environment...');
 
-    const check = spawnSync(cmd, ['--version']);
-    if (check.error) {
-      cmd = 'npx';
-      args = ['@google/gemini-cli', ...baseArgs];
+    // Create progress tracker for real-time updates
+    const progressTracker = new ProgressTracker(socket);
+    
+    const progressCallback = (type, data) => {
+      if (type === 'output') {
+        progressTracker.onGeminiOutput(data);
+      } else if (type === 'error') {
+        progressTracker.onError(data);
+      }
+    };
+
+    // Execute test case with Gemini CLI
+    const result = await geminiCLIExecutor.executeTestCase(data, progressCallback);
+
+    // Parse final results
+    const finalResults = geminiCLIExecutor.parseGeminiOutput(result.output);
+
+    // Send final summary using progress tracker
+    progressTracker.sendFinalSummary();
+
+  } catch (error) {
+    console.error('Gemini CLI execution error:', error);
+    
+    // Try to handle and recover from the error
+    const recovery = await errorHandler.handleGeminiCLIError(error, { testData: data });
+    
+    if (recovery.recovered && recovery.retry) {
+      socket.emit('message', `🔄 Attempting recovery: ${recovery.message}`);
+      // Retry the execution
+      return await executeWithGeminiCLI(data, socket);
     }
-
-    const proc = spawn(cmd, args, { env: process.env });
-    proc.stdout.on('data', (chunk) => {
-      socket.emit('message', chunk.toString());
-    });
-    proc.stderr.on('data', (chunk) => {
-      console.error('gemini-cli error:', chunk.toString());
-    });
-    proc.on('close', (code) => {
-      if (code === 0) resolve();
-      else reject(new Error(`gemini-cli exited with code ${code}`));
-    });
-  });
+    
+    socket.emit('message', `❌ Gemini CLI execution failed: ${error.message}`);
+    if (recovery.suggestion) {
+      socket.emit('message', `💡 Suggestion: ${recovery.suggestion}`);
+    }
+    
+    throw error;
+  }
 }
 
-httpServer.listen(PORT, () => {
-  console.log(`Socket server listening on port ${PORT}`);
+// Legacy function for backward compatibility
+async function runWithGeminiCLI(data, socket) {
+  console.log('⚠️ Using legacy Gemini CLI function. Consider using USE_MCP_INTEGRATION=true');
+  return executeWithGeminiCLI(data, socket);
+}
+
+// Initialize server with MCP setup
+async function initializeServer() {
+  try {
+    console.log('🔧 Initializing MCP configuration...');
+    await mcpConfigManager.ensureConfiguration();
+
+    console.log('🚀 Starting MCP server...');
+    await mcpConfigManager.startMCPServer();
+
+    // Check Gemini CLI availability if MCP integration is enabled
+    if (process.env.USE_MCP_INTEGRATION === 'true') {
+      console.log('🤖 Checking Gemini CLI installation...');
+      
+      try {
+        const installationStatus = await geminiCLIExecutor.checkGeminiCLIInstallation();
+
+        if (installationStatus.available) {
+          console.log(`✅ Gemini CLI available (${installationStatus.method})`);
+        } else {
+          console.log('⚠️ Gemini CLI not found. Will install on first use.');
+        }
+      } catch (checkError) {
+        console.log('⚠️ Could not verify Gemini CLI installation. Will attempt installation on first use.');
+      }
+    } else {
+      // Validate legacy dependencies
+      try {
+        if (!model) {
+          console.log('⚠️ Legacy mode requires @langchain/google-genai. Install with: npm install @langchain/google-genai');
+        }
+      } catch (legacyError) {
+        console.log('⚠️ Legacy dependencies not available. Consider enabling USE_MCP_INTEGRATION=true');
+      }
+    }
+
+    httpServer.listen(PORT, () => {
+      console.log(`✅ Socket server listening on port ${PORT}`);
+      console.log('🎭 Playwright MCP server ready');
+
+      if (process.env.USE_MCP_INTEGRATION === 'true') {
+        console.log('🔗 Gemini CLI + MCP integration enabled');
+        console.log('📋 Available MCP tools: 24 Playwright browser automation tools');
+      } else {
+        console.log('📝 Using legacy Playwright integration (set USE_MCP_INTEGRATION=true for new system)');
+        console.log('⚠️ Legacy mode has limited capabilities compared to MCP integration');
+      }
+      
+      console.log('🌐 Server ready for test execution requests');
+      console.log('📖 API Documentation: GET / for server status');
+    });
+  } catch (error) {
+    console.error('❌ Server initialization failed:', error);
+    
+    // Try to handle initialization errors
+    const recovery = await errorHandler.handleMCPError(error, { type: 'initialization' });
+    
+    if (recovery.recovered) {
+      console.log(`🔄 Initialization recovery: ${recovery.message}`);
+      // Retry initialization
+      return await initializeServer();
+    }
+    
+    if (recovery.suggestion) {
+      console.error(`💡 Suggestion: ${recovery.suggestion}`);
+    }
+    
+    process.exit(1);
+  }
+}
+
+// Graceful shutdown
+process.on('SIGINT', async () => {
+  console.log('\n🛑 Shutting down server...');
+  geminiCLIExecutor.terminate();
+  await mcpConfigManager.stopMCPServer();
+  process.exit(0);
 });
+
+process.on('SIGTERM', async () => {
+  console.log('\n🛑 Shutting down server...');
+  geminiCLIExecutor.terminate();
+  await mcpConfigManager.stopMCPServer();
+  process.exit(0);
+});
+
+// Start the server
+initializeServer();
