@@ -3,12 +3,21 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "node index.js"
+    "dev": "node index.js",
+    "setup": "node scripts/setup.js",
+    "test": "node test/MCPConfigManager.test.js && node test/GeminiCLIExecutor.test.js && node test/TestStepParser.test.js",
+    "test:integration": "node test/integration.test.js",
+    "test:performance": "node test/performance.test.js",
+    "test:all": "npm run test && npm run test:integration && npm run test:performance",
+    "start": "NODE_ENV=production node index.js"
   },
   "dependencies": {
     "express": "^4.19.2",
     "socket.io": "^4.8.1",
-    "dotenv": "^16.5.0",
+    "dotenv": "^16.5.0"
+  },
+  "optionalDependencies": {
+    "@google/gemini-cli": "^1.0.0",
     "@langchain/google-genai": "^0.0.13",
     "playwright": "^1.54.1"
   }
