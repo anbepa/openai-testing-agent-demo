@@ -6,7 +6,7 @@ import { ChatGoogleGenerativeAI } from '@langchain/google-genai';
 import { chromium } from 'playwright';
 import fs from 'fs';
 import path from 'path';
-import { spawn } from 'child_process';
+import { spawn, spawnSync } from 'child_process';
 
 dotenv.config({ path: '.env.development' });
 
@@ -396,8 +396,22 @@ async function verifyWithSmartSelector(page, target) {
 async function runWithGeminiCLI(data, socket) {
   return new Promise((resolve, reject) => {
     const prompt = `${data.testCase}\nTARGET WEBSITE: ${data.url}`;
-    const cmd = 'npx';
-    const args = ['@google/gemini-cli', '-p', prompt];
+    const settingsPath = path.join(process.cwd(), '.gemini', 'settings.json');
+
+    const baseArgs = ['-p', prompt];
+    if (fs.existsSync(settingsPath)) {
+      baseArgs.push('--settings', settingsPath);
+    }
+
+    let cmd = 'gemini';
+    let args = baseArgs;
+
+    const check = spawnSync(cmd, ['--version']);
+    if (check.error) {
+      cmd = 'npx';
+      args = ['@google/gemini-cli', ...baseArgs];
+    }
+
     const proc = spawn(cmd, args, { env: process.env });
     proc.stdout.on('data', (chunk) => {
       socket.emit('message', chunk.toString());
