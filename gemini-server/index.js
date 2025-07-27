@@ -9,6 +9,7 @@ import { MCPConfigManager } from './lib/MCPConfigManager.js';
 import { GeminiCLIExecutor } from './lib/GeminiCLIExecutor.js';
 import { ProgressTracker } from './lib/ProgressTracker.js';
 import { ErrorHandler } from './lib/ErrorHandler.js';
+import { SocketEventHandler } from "./lib/SocketEventHandler.js";
 
 dotenv.config({ path: '.env.development' });
 
@@ -37,6 +38,7 @@ const geminiCLIExecutor = new GeminiCLIExecutor(mcpConfigManager);
 // Initialize Error Handler
 const errorHandler = new ErrorHandler(mcpConfigManager, geminiCLIExecutor);
 
+const socketEventHandler = new SocketEventHandler(mcpConfigManager, geminiCLIExecutor, errorHandler, model);
 app.get('/', (req, res) => {
   const status = {
     service: 'Gemini Testing Server',
@@ -69,133 +71,10 @@ if (!fs.existsSync(screenshotsDir)) {
   fs.mkdirSync(screenshotsDir, { recursive: true });
 }
 
-io.on('connection', (socket) => {
-  console.log('Client connected', socket.id);
-
-  socket.on('testCaseInitiated', async (data) => {
-    console.log('Received test case data:', data);
-
-    // Check if we should use the new Gemini CLI + MCP integration
-    if (process.env.USE_GEMINI_CLI === 'true' || process.env.USE_MCP_INTEGRATION === 'true') {
-      try {
-        await executeWithGeminiCLI(data, socket);
-      } catch (err) {
-        console.error('Gemini CLI + MCP error', err);
-        socket.emit('message', 'Error running Gemini CLI with MCP: ' + err.message);
-      }
-      return;
-    }
-
-    socket.emit('message', '🤖 Generating test steps with Gemini...');
-
-    // Build comprehensive prompt for generating test steps
-    let prompt = `You are a QA automation assistant. Break down the following test case into clear, executable steps:
-
-TEST INSTRUCTIONS:
-${data.testCase}
-
-TARGET WEBSITE: ${data.url}
-LOGIN REQUIRED: ${data.loginRequired ? 'Yes' : 'No'}`;
-
-    if (data.loginRequired) {
-      prompt += `
-USERNAME: ${data.userName}
-PASSWORD: ${data.password}`;
-    }
-
-    if (data.userInfo) {
-      const userInfo = JSON.parse(data.userInfo);
-      prompt += `
-USER INFO: Name: ${userInfo.name}, Email: ${userInfo.email}, Address: ${userInfo.address}`;
-    }
-
-    prompt += `
-
-Please respond with a JSON array of test steps in this exact format:
-[
-  {
-    "step_number": 1,
-    "step_instructions": "Navigate to ${data.url}",
-    "action_type": "navigate",
-    "target": "${data.url}",
-    "status": "pending"
-  },
-  {
-    "step_number": 2,
-    "step_instructions": "Wait for page to load",
-    "action_type": "wait",
-    "target": "networkidle",
-    "status": "pending"
-  }
-]
-
-IMPORTANT RULES:
-1. For GitHub search, use selector: 'input[name="q"], [data-target="qbsearch-input.inputButtonText"]'
-2. For typing, use format: "selector|text" in target field
-3. For clicking search, use: 'button[type="submit"], .btn-primary'
-4. For verification, use specific selectors like: '.search-results, [data-testid="results"]'
-5. Action types: navigate, click, type, wait, screenshot, verify
-6. Keep steps simple and use real CSS selectors for the target website
-7. For ${data.url}, use GitHub-specific selectors`;
-
-    try {
-      const response = await model.invoke(prompt);
-      let stepsText = response.content;
-
-      // Extract JSON from markdown if present
-      const jsonMatch = stepsText.match(/```(?:json)?\s*(\[[\s\S]*?\])\s*```/);
-      if (jsonMatch) {
-        stepsText = jsonMatch[1];
-      }
-
-      const steps = JSON.parse(stepsText);
-
-      // Send initial steps to frontend
-      socket.emit('testcases', JSON.stringify({ steps }));
-      socket.emit('message', '✅ Test steps generated! Starting execution...');
-
-      // Execute the test steps
-      await executeTestSteps(steps, data, socket);
-
-    } catch (err) {
-      console.error('Gemini error', err);
-      socket.emit('message', 'Error generating test steps: ' + err.message);
-    }
-  });
-
-  socket.on('message', async (msg) => {
-    try {
-      // Use Gemini CLI for messages if MCP integration is enabled
-      if (process.env.USE_MCP_INTEGRATION === 'true') {
-        const testData = {
-          testCase: msg,
-          url: 'about:blank',
-          loginRequired: false
-        };
-
-        const progressCallback = (type, data) => {
-          if (type === 'output') {
-            socket.emit('message', data);
-          }
-        };
-
-        const result = await geminiCLIExecutor.executeTestCase(testData, progressCallback);
-        // Result is already sent via progressCallback
-      } else {
-        // Fallback to direct API (legacy mode)
-        if (model) {
-          const response = await model.invoke(msg);
-          socket.emit('message', response.content);
-        } else {
-          socket.emit('message', '⚠️ Legacy mode requires @langchain/google-genai. Enable MCP integration with USE_MCP_INTEGRATION=true');
-        }
-      }
-    } catch (err) {
-      console.error('Gemini error', err);
-      socket.emit('message', 'Error generating response.');
-    }
-  });
+io.on("connection", (socket) => {
+  socketEventHandler.handleConnection(socket);
 });
+
 
 // Legacy function to execute test steps with direct Playwright (deprecated)
 async function executeTestSteps(steps, testData, socket) {
