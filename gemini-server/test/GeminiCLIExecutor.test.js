@@ -152,11 +152,11 @@ runner.test('should parse Gemini CLI output', async () => {
   const executor = new GeminiCLIExecutor(mcpManager);
 
   const mockOutput = `Starting test execution...
-browser_navigate to https://github.com
+Calling browser_navigate with url="https://github.com"
 Navigation completed successfully
-browser_click on search input
+Calling browser_click with selector="input[name=q]"
 Click completed successfully
-browser_type "test repository"
+Calling browser_type with selector="input[name=q]" text="test repository"
 Typing completed successfully
 browser_take_screenshot saved to screenshot_1.png
 Screenshot saved successfully
