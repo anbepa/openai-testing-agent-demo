@@ -10,6 +10,7 @@
     "socket.io": "^4.8.1",
     "dotenv": "^16.5.0",
     "@langchain/google-genai": "^0.0.13",
-    "playwright": "^1.54.1"
+    "playwright": "^1.54.1",
+    "@google/gemini-cli": "^0.1.14"
   }
 }

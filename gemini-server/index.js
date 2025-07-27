@@ -6,6 +6,7 @@ import { ChatGoogleGenerativeAI } from '@langchain/google-genai';
 import { chromium } from 'playwright';
 import fs from 'fs';
 import path from 'path';
+import { spawn } from 'child_process';
 
 dotenv.config({ path: '.env.development' });
 
@@ -36,6 +37,16 @@ io.on('connection', (socket) => {
 
   socket.on('testCaseInitiated', async (data) => {
     console.log('Received test case data:', data);
+
+    if (process.env.USE_GEMINI_CLI === 'true') {
+      try {
+        await runWithGeminiCLI(data, socket);
+      } catch (err) {
+        console.error('Gemini CLI error', err);
+        socket.emit('message', 'Error running Gemini CLI: ' + err.message);
+      }
+      return;
+    }
 
     socket.emit('message', '🤖 Generating test steps with Gemini...');
 
@@ -380,6 +391,25 @@ async function verifyWithSmartSelector(page, target) {
   if (!element) {
     throw new Error(`Element not found: ${target}`);
   }
+}
+
+async function runWithGeminiCLI(data, socket) {
+  return new Promise((resolve, reject) => {
+    const prompt = `${data.testCase}\nTARGET WEBSITE: ${data.url}`;
+    const cmd = 'npx';
+    const args = ['@google/gemini-cli', '-p', prompt];
+    const proc = spawn(cmd, args, { env: process.env });
+    proc.stdout.on('data', (chunk) => {
+      socket.emit('message', chunk.toString());
+    });
+    proc.stderr.on('data', (chunk) => {
+      console.error('gemini-cli error:', chunk.toString());
+    });
+    proc.on('close', (code) => {
+      if (code === 0) resolve();
+      else reject(new Error(`gemini-cli exited with code ${code}`));
+    });
+  });
 }
 
 httpServer.listen(PORT, () => {
